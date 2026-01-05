@@ -242,31 +242,31 @@ local function getPlayerJobInfo(playerId)
         return nil
     end
 
-    local player = lib.framework.getPlayer(playerId)
+    local player = exports.qbx_core:GetPlayer(source) --lib.framework.getPlayer(playerId) 
     if not player then
-        debugLog('Player not found in framework', { playerId = playerId })
+        debugLog('couldnt find palyer by id ', { playerId = playerId })
         return nil
     end
 
-    local framework = lib.framework.getName()
+  --  local framework = lib.framework.getName()
 
-    if framework == 'esx' then
-        local job = player.getJob()
-        return {
-            name = job.name,
-            grade = job.grade,
-            gang = nil -- ESX doesn't have gangs by default
-        }
-    elseif framework == 'qb' or framework == 'qbx' then
-        return {
+  -- if framework == 'esx' then
+  --      local job = player.getJob()
+  --     return {
+  --          name = job.name,
+  --         grade = job.grade,
+  --          gang = nil -- ESX doesn't have gangs by default
+  --      }
+  --  elseif framework == 'qb' or framework == 'qbx' then
+  --      return {
             name = player.PlayerData.job.name,
             grade = player.PlayerData.job.grade.level,
             gang = player.PlayerData.gang and player.PlayerData.gang.name or nil
-        }
-    end
+  --      }
+  --  end
 
-    debugLog('Unsupported framework for job lookup', { framework = framework })
-    return nil
+  --  debugLog('Unsupported framework for job lookup', { framework = framework })
+  --  return nil
 end
 
 ---Check if a player can see a blip based on access restrictions
@@ -1055,14 +1055,14 @@ end
 RegisterNetEvent('ox_lib:blips:requestSync', onPlayerRequestSync)
 
 -- Framework-specific job change events
-if lib.framework.isAvailable() then
-    local framework = lib.framework.getName()
-
-    if framework == 'esx' then
-        RegisterNetEvent('esx:setJob', function(playerId)
-            onPlayerJobChanged(playerId)
-        end)
-    elseif framework == 'qb' or framework == 'qbx' then
+--if lib.framework.isAvailable() then
+----    local framework = lib.framework.getName()
+--
+--    if framework == 'esx' then
+--        RegisterNetEvent('esx:setJob', function(playerId)
+--            onPlayerJobChanged(playerId)
+--        end)
+--    elseif framework == 'qb' or framework == 'qbx' then
         RegisterNetEvent('QBCore:Server:OnJobUpdate', function(playerId)
             onPlayerJobChanged(playerId)
         end)
@@ -1070,8 +1070,8 @@ if lib.framework.isAvailable() then
         RegisterNetEvent('QBCore:Server:OnGangUpdate', function(playerId)
             onPlayerJobChanged(playerId)
         end)
-    end
-end
+--    end
+--end
 
 -- Player disconnect cleanup
 AddEventHandler('playerDropped', function()
