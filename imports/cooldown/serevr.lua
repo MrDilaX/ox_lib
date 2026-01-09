@@ -1,141 +1,89 @@
-GlobalState.cooldowns = {}
+---
+    local player_cooldowns = {}
+    local global_cooldowns = {}
+    local resource_cooldowns = {}
 
-local function addGlobalCooldown(type, id)
-    local cooldowns = GlobalState.cooldowns
-    if not cooldowns then cooldowns = {} end
-    if not cooldowns[type] then cooldowns[type] = {} end
-    if not cooldowns[type][id] then cooldowns[type][id] = {} end
-    cooldowns[type][id] = true
-    GlobalState.cooldowns = cooldowns
-end
+    --- Adds a cooldown for a player or globally.
+    --- @param source number: Server ID or unique identifier.
+    --- @param cooldown_type string: Type of cooldown (e.g., "begging").
+    --- @param duration number: Duration in seconds.
+    --- @param is_global boolean: Whether its global or per-player.
+        function lib.add(source, cooldown_type, duration, is_global)
+        local expires = os.time() + duration
+        local resource = GetInvokingResource() or "unknown"
+        local info = { end_time = expires, resource = resource }
 
-local function removeGlobalCooldown(type, id, duration, timer)
-    local cooldowns = GlobalState.cooldowns
-    if not cooldowns then return end
-    if not cooldowns[type] then return end
-    if not cooldowns[type][id] then return end
-    cooldowns[type][id] = nil
-    GlobalState.cooldowns = cooldowns
-end
-
-lib.callback.register('ox_lib:cooldowns:Add', function(type, id, duration, cb, overide, source)
-    return lib.cooldowns.add(type, id, duration, cb, false, true, overide, source)
-end)
-
-lib.callback.register('ox_lib:cooldowns:IsActive', function(type, id)
-    return lib.cooldows.isActive(type, id)
-end)
-
-Cooldowns = {
-    timers = {},
-    isActive = function(type, id)
-        if not type or not id then return false end
-        local cooldown = Cooldowns.get(type, id)
-        if not cooldown then return false end
-        return cooldown.running or false
-    end,
-    create = function(type, id, duration, cb, global, client)
-        local data =
-        {
-            type = type,
-            id = id,
-            timer = duration,
-            duration = duration or 30,
-            running = false,
-            callback = cb,
-            started = nil,
-            stopped = nil,
-            run = function()
-                Cooldowns.run(type, id, duration, cb, global, client)
-            end,
-            global = global,
-            client = client
-        }
-        return data
-    end,
-    add = function(type, id, duration, cb, global, overide)
-        if not id or not type then return false end
-        if Cooldowns.isActive(type, id) and not overide then return false end
-        local cooldown = Cooldowns.create(type, id, duration, cb)    
-        if Cooldowns.isActive(type, id) then
-            Cooldowns.remove(type, id)
+        if is_global then
+            global_cooldowns[cooldown_type] = info
+        else
+            player_cooldowns[source] = player_cooldowns[source] or {}
+            player_cooldowns[source][cooldown_type] = info
         end
-        Cooldowns.timers[type][id] = cooldown
-        return cooldown.run(type, id, duration, cb)
-    end,
-    replace = function(type, id, table)
-        if not id or not type then return end
-        Cooldowns.timers[type][id] = table
-    end,
-    remove = function(type, id)
-        if not id or not type then return end
-        Cooldowns.timers[type][id] = nil
-    end,
-    get = function(type, id)
-        if not id or not type then return false end
-        if not Cooldowns.isActive(type, id) then return false end
-        if not Cooldowns.timers[type] then return false end
-        if Cooldowns.timers[type] and not id then return Cooldowns.timers[type][id] end
-        if Cooldowns.timers[type][id] and id then return Cooldowns.timers[type][id] end
-    end,
-    set = function(type, id, key, value)
-        if not value then return end
-        if not type or not id then return end
-        if not Cooldowns.timers[type] then Cooldowns.timers[type] = {} end
-        if not Cooldowns.timers[type][id] then Cooldowns.timers[type][id] = {} end
-        if key == nil and type(value) == 'table' then 
-            Cooldowns.timers[type][id] = value
-        else 
-            Cooldowns.timers[type][id][key] = value 
+
+        resource_cooldowns[resource] = resource_cooldowns[resource] or {}
+        table.insert(resource_cooldowns[resource], { source = source, cooldown_type = cooldown_type, is_global = is_global })
+    end
+
+    --- Checks if a cooldown is active.
+    --- @param source number: Player/server ID.
+    --- @param cooldown_type string: Type of cooldown.
+    --- @param is_global boolean: Whether to check globally.
+    --- @return boolean
+    function lib.check(source, cooldown_type, is_global)
+        local now = os.time()
+        if is_global then
+            return global_cooldowns[cooldown_type] and now < global_cooldowns[cooldown_type].end_time
         end
-        return value
-    end,   
-    run = function(type, id, duration, cb, global)
-        local cooldown = Cooldowns.get(type, id)
-        if not cooldown then return false end
-        CreateThread(function()
-            local started = os.time()
-            cooldown.started = started
-            cooldown.running = true
-            if global then addGlobalCooldown(type, id) end
-            cooldown = Cooldowns.set(type, id, nil, cooldown)
-            while true do
-                Wait(1000)
-                cooldown = Cooldowns.get(type, id)
-                if (cooldown and cooldown.started == started) and not cooldown then break end
-                cooldown.timer = cooldown.timer - 1
-                if cooldown.timer <= 0 then
-                    cooldown.timer = 0
-                    cooldown.running = false
-                    cooldown.stopped = os.time()
-                    cooldown = Cooldown.set(type, id, nil, cooldown)
-                    local callback = cooldown.callback
-                    if callback and cooldown.client == false then callback()
-                    elseif callback and cooldown.client == true then
-                        TriggerClientEvent('ox_lib:cooldowns:finished', -1, type, id, duration, callback)
-                    end
-                    break
+        return player_cooldowns[source] and player_cooldowns[source][cooldown_type] and now < player_cooldowns[source][cooldown_type].end_time
+    end
+
+    --- Clears a specific cooldown.
+    --- @param source number: Player/server ID.
+    --- @param cooldown_type string: Type of cooldown.
+    --- @param is_global boolean: Whether to clear globally.
+    function lib.clear(source, cooldown_type, is_global)
+        if is_global then
+            global_cooldowns[cooldown_type] = nil
+            GlobalState["cooldown_" .. cooldown_type] = nil
+        elseif player_cooldowns[source] then
+            player_cooldowns[source][cooldown_type] = nil
+        end
+    end
+
+    --- Clears all expired m.
+    function lib.clear_all()
+        local now = os.time()
+
+        for id, cd in pairs(player_cooldowns) do
+            for action, info in pairs(cd) do
+                if now >= info.end_time then
+                    cd[action] = nil
                 end
-                Cooldowns.set(type, id, 'timer', cooldown.timer)
             end
-        end)
-    end,
-}
+            if not next(cd) then player_cooldowns[id] = nil end
+        end
 
-lib.cooldowns = {
-    add = function(type, id, duration, cb, global, overide)
-        return Cooldowns.add(type, id, duration, cb, global, nil, overide)
-    end,
-    get = function(type, id)
-        return Cooldowns.get(type, id)
-    end,
-    remove = function(type, id)
-        if not Cooldowns.isActive(type, id) then return false end
-        return Cooldowns.remove(type, id)
-    end,
-    isActive = function(type, id)
-        return Cooldown.isActive(type, id)
-    end,
-}
+        for action, info in pairs(global_cooldowns) do
+            if now >= info.end_time then
+                global_cooldowns[action] = nil
+                GlobalState["cooldown_" .. action] = nil
+            end
+        end
+    end
 
-return lib.cooldowns
+    --- Clears all cooldowns for a given resource.
+    --- @param resource string: Resource name.
+    function lib.clear_resource(resource)
+        local list = resource_cooldowns[resource]
+        if not list then return end
+
+        for _, entry in ipairs(list) do
+            if entry.is_global then
+                global_cooldowns[entry.cooldown_type] = nil
+            elseif player_cooldowns[entry.source] then
+                player_cooldowns[entry.source][entry.cooldown_type] = nil
+            end
+        end
+
+        resource_cooldowns[resource] = nil
+    end
